@@ -1,0 +1,4 @@
+ragas==0.1.14
+langchain-groq==0.1.9
+pandas==2.2.2
+langchain-google-genai==1.0.6
