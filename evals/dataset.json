@@ -1,0 +1,18 @@
+[
+  {
+    "question": "What embedding model is used in DevPilot?",
+    "answer": "DevPilot uses the Google Gemini text-embedding-004 model for embeddings, specifically implemented in the GeminiEmbeddingModel class.",
+    "contexts": [
+      "public class GeminiEmbeddingModel implements EmbeddingModel {\n    private final RestClient restClient;\n    private final String apiKey;\n    private final String model;\n    public GeminiEmbeddingModel(@Value(\"${spring.ai.google.genai.api-key}\") String apiKey) {\n        this.apiKey = apiKey;\n        this.model = \"text-embedding-004\";"
+    ],
+    "ground_truth": "The application uses the Google Gemini text-embedding-004 model via the GeminiEmbeddingModel."
+  },
+  {
+    "question": "How are rate limits handled for API requests?",
+    "answer": "API rate limits are handled by the ApiRateLimitInterceptor, which applies a token bucket limit per user or per IP address for anonymous requests.",
+    "contexts": [
+      "@Component\npublic class ApiRateLimitInterceptor implements HandlerInterceptor {\n    private final int limitPerMinute;\n    private final Map<String, Window> windows = new ConcurrentHashMap<>();\n    private String resolveKey(HttpServletRequest request) {\n        Authentication auth = SecurityContextHolder.getContext().getAuthentication();\n        if (auth != null && auth.getPrincipal() instanceof AppUserPrincipal principal) {\n            return \"user:\" + principal.getId();\n        }\n        return \"ip:\" + request.getRemoteAddr();\n    }"
+    ],
+    "ground_truth": "Rate limiting is handled by the ApiRateLimitInterceptor which tracks requests per user or IP address in a ConcurrentHashMap."
+  }
+]

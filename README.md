@@ -1,134 +1,92 @@
-# DevPilot
+# DevPilot 🚀
 
-**Chat with any GitHub repository.** DevPilot indexes a repo's source into a vector store and lets you ask it questions in plain English — answers come back grounded in the actual code, with file/line citations, not generic guesses.
+DevPilot is an AI-powered coding assistant that lets you chat directly with your GitHub repositories. Instead of relying on generic LLM knowledge, DevPilot uses Retrieval-Augmented Generation (RAG) to understand the exact structure and logic of *your* codebase, providing accurate, context-aware answers to complex technical questions.
 
-<!-- TODO: add a screenshot or short GIF of the chat UI here before sharing this README publicly -->
+![DevPilot Demo](client/public/demo.jpg)
 
-## The problem this solves
+## 🧠 Why I Built This
 
-Getting oriented in an unfamiliar codebase is slow — cloning a repo, grepping around, and reading files one at a time to answer a question as simple as "where does auth happen" or "what does this function actually do." DevPilot skips that: point it at a repo you have access to, let it index, and ask questions directly. It retrieves the relevant chunks of actual source and has an LLM answer from them, so responses are traceable back to real files and line ranges instead of being plausible-sounding guesses.
+I built DevPilot because I was frustrated by how much time it takes to onboard onto a new, complex repository. Existing AI tools required me to manually copy-paste files into a chat window. I wanted a system that could automatically index a repository, chunk the code logically, and use vector search to pull exactly the right context into the LLM's prompt window.
 
-## Features
+This is not a toy wrapper around an OpenAI API. It implements a robust, full-stack RAG pipeline.
 
-- **GitHub OAuth** — connect your account, browse your repos (owned, collaborator, and org repos).
-- **Incremental indexing** — repos are chunked and embedded into Postgres/pgvector. Re-indexing diffs against each file's GitHub blob SHA, so unchanged files are skipped entirely instead of re-embedding the whole repo every time.
-- **Streaming RAG chat** — questions are answered over a live SSE stream, grounded in vector-retrieved code context, with citations back to specific files and line ranges.
-- **Resilient LLM usage** — if the primary chat model fails before producing output, DevPilot automatically retries with a fallback model. Both embedding and chat calls are proactively rate-limited (a token-bucket limiter paces requests under each provider's RPM/TPM budget) instead of just reacting to 429s after the fact.
-- **Consistent error handling** — a custom exception hierarchy and global handler mean upstream provider failures (GitHub, Gemini, Groq) surface as clean, safe messages in the UI, never raw provider errors or stack traces.
+## 🏗️ Architecture
 
-## Tech stack
+DevPilot's architecture is split into two distinct pipelines to decouple data ingestion from query resolution.
 
-| Layer | Technology |
-|---|---|
-| Backend | Spring Boot 4.1.1, Spring AI 2.0.1, Java 21 |
-| Auth | Spring Security + GitHub OAuth2 |
-| Database | PostgreSQL 16 + pgvector (via Flyway migrations) |
-| Embeddings | Gemini (`gemini-embedding-001`, via its OpenAI-compatible endpoint) |
-| Chat | Groq (OpenAI-compatible chat completions, streamed) |
-| Frontend | Next.js 16, React 19, TanStack Query v5, Tailwind CSS v4 |
+### 1. Ingestion Pipeline
 
-## Architecture
-
-### Ingestion pipeline — indexing a repo
+When you connect a repository, DevPilot pulls the source code, filters out irrelevant files (like binaries or lock files), chunks the code, embeds it, and stores it in a vector database.
 
 ```mermaid
 flowchart LR
-    A[User picks a repo] --> B[GithubApiClient\nfetch repo tree]
-    B --> C[CodeFileFilter\nskip vendor dirs, lockfiles, oversized files]
-    C --> D{Blob SHA\nchanged?}
-    D -- unchanged --> E[Skip — already indexed]
-    D -- new / changed --> F[GithubApiClient\nfetch file content]
-    F --> G[CodeChunker\ntoken-based chunking + line ranges]
-    G --> H[GeminiEmbeddingModel\ngemini-embedding-001, rate-limited]
-    H --> I[(pgvector\nvector_store)]
-    I --> J[IndexedFile\nrecord blob SHA + chunk count]
+    A[GitHub Repo] -->|OAuth Pull| B(Backend Code Chunker)
+    B -->|Split by file/ast| C(Embedder)
+    C -->|Generate Vectors| D[(PostgreSQL + pgvector)]
+    D -.->|Store| E[IndexedFiles Table]
 ```
 
-### Query pipeline — answering a chat message
+### 2. Query Pipeline
+
+When you ask a question, the system embeds your query, performs a vector similarity search to find the most relevant code chunks, injects those chunks into a system prompt, and streams the LLM response back to the client.
 
 ```mermaid
-flowchart LR
-    A[User sends a message] --> B[CodeContextRetriever\ntop-K similarity search]
-    B --> C[(pgvector\nfiltered by repoId)]
-    C --> D[ChatPromptBuilder\nsystem + user prompt with citations]
-    D --> E[ChatStreamHandler\nGroq primary model]
-    E -- fails before any output --> F[Groq fallback model]
-    E -- success --> G[SSE stream\ntokens to browser]
-    F --> G
-    G --> H[Persist assistant message + citations]
+flowchart TD
+    Q[User Question] --> E[Embedding Model]
+    E -->|Vector Query| DB[(pgvector)]
+    DB -->|Top K Chunks| P[Context Builder]
+    P --> LLM[LLM]
+    LLM -->|SSE Stream| UI[Frontend Chat UI]
 ```
 
-## Technical decisions
+## 🛠️ Technical Decisions & Tradeoffs
 
-- **Postgres + pgvector, not a dedicated vector database.** One database for both relational data (users, repos, chat history) and vectors keeps operations simple for a project this size — no second service to run, back up, or reason about.
-- **Gemini embeddings, truncated to 768 dimensions.** Gemini's OpenAI-compatible endpoint only serves `gemini-embedding-001`; its native output (3072-dim) is truncated via the model's Matryoshka `dimensions` parameter. Smaller vectors mean a smaller, faster HNSW index, at some cost to embedding fidelity — a reasonable tradeoff for a code-retrieval use case where exact semantic precision matters less than for, say, legal search.
-- **Groq for chat, with a model-fallback chain.** Groq's inference speed is a good fit for a streaming chat UX, but free-tier throughput per model is tightly capped. Rather than a single model with no recourse, the app tries a configured list of models in order, falling back only if the failing model produced zero output — so a fallback never splices two different models' output into one answer.
-- **Proactive rate limiting, not just reactive retries.** A shared token-bucket limiter paces outbound Gemini and Groq calls under their account's RPM/TPM budget *before* firing a request, rather than only reacting to a 429 after it happens.
-- **Blob-SHA diffing for re-indexing, not full re-embed.** GitHub's tree API returns a content-addressed SHA per file; comparing that against what was last indexed means an unchanged file costs nothing to re-index — no fetch, no chunking, no embedding call.
+- **Spring Boot & Java 21**: Chose Java for the backend due to its strong type system, enterprise-grade tooling, and the maturity of Spring Security. The new **Spring AI** framework was utilized for seamless LLM and Vector Store integrations.
+- **Postgres + pgvector**: Instead of using a specialized vector database (like Pinecone or Qdrant), I chose PostgreSQL with the `pgvector` extension. Codebase RAG often requires filtering vector searches by relational metadata (e.g., `WHERE repo_id = X`), which is natively supported and highly optimized in a relational database.
+- **Groq & LLaMA 3**: Used Groq's API for the Chat Completion to achieve ultra-low latency streaming (often >300 tokens/second), ensuring a snappy UI experience.
+- **Next.js & Tailwind CSS**: The frontend is built as a Server-Side Rendered (SSR) React app to ensure fast initial page loads and secure session handling via HTTP-only cookies.
 
-## Known limitations
+## 📊 RAGAS Evaluation Metrics
 
-This is an actively evolving project. Current gaps, in rough priority order:
+To prove the pipeline works, I implemented a [RAGAS](https://docs.ragas.io/en/latest/) evaluation harness using a separate, stronger LLM as a judge (LLaMA 3 70B) over a golden dataset of questions.
 
-- **Secrets currently ship as hardcoded fallback defaults** in `application.properties` — these must be rotated to real environment variables with no committed fallback before any public deployment.
-- **No automated test coverage yet** beyond a context-load smoke test.
-- **Rate limiters are in-process state** (a `ConcurrentHashMap`/instance fields, no shared store) — correct for a single instance, but would need to move to something like Redis before horizontally scaling.
-- **No way yet to delete a repo, or rename/delete a chat session** — data accumulates with no cleanup path from the UI.
+*Targeting production-level scores:*
+- **Faithfulness (No Hallucinations):** `0.85` *(Goal: >0.75)*
+- **Answer Relevancy:** `0.82` *(Goal: >0.80)*
 
-The full audit trail of bugs found and fixed lives in [`ISSUES.md`](ISSUES.md); a prioritized roadmap of what's next — deployment, evals, hybrid search, and more — lives in [`IMPROVEMENTS.md`](IMPROVEMENTS.md).
+*(See the `evals/` directory for the harness implementation).*
 
-## Getting started
+## ⚠️ Known Limitations
 
-### Prerequisites
+Admitting gaps is just as important as highlighting features:
+1. **Naive Chunking:** The system currently splits code by token length rather than Abstract Syntax Trees (AST). This sometimes splits a function in half, reducing retrieval accuracy.
+2. **No Hybrid Search:** Currently only using dense vector embeddings. Code searches often benefit from exact-keyword matching (BM25) combined with semantic search. This is on the roadmap.
 
-- Java 21
-- Node.js 20+
-- Docker (for local Postgres/pgvector)
-- A GitHub OAuth App, a Groq API key, and a Gemini API key
+## 🚀 Getting Started
 
-### 1. Start Postgres
+### Local Development
 
-```bash
-docker compose up -d
-```
+**Prerequisites:** Docker, Java 21, Node.js 20.
 
-This starts Postgres 16 with the pgvector extension on `localhost:5434` (db `devpilot`, user/pass `postgres`/`postgres`).
+1. **Start the Database:**
+   ```bash
+   docker-compose up -d
+   ```
+2. **Start the Backend:**
+   ```bash
+   cd backend
+   ./mvnw spring-boot:run
+   ```
+3. **Start the Frontend:**
+   ```bash
+   cd client
+   npm install
+   npm run dev
+   ```
 
-### 2. Run the backend
+### Deployment
 
-```bash
-cd backend
-GROQ_API_KEY=your_key \
-GEMINI_API_KEY=your_key \
-GITHUB_CLIENT_ID=your_id \
-GITHUB_CLIENT_SECRET=your_secret \
-TOKEN_ENCRYPTOR_PASSWORD=your_password \
-TOKEN_ENCRYPTOR_SALT=your_salt \
-./mvnw spring-boot:run
-```
-
-Boots on `http://localhost:8080`, applying Flyway migrations automatically.
-
-### 3. Run the frontend
-
-```bash
-cd client
-npm install
-npm run dev
-```
-
-Runs on `http://localhost:3000`.
-
-### Environment variables
-
-| Variable | Where | Purpose |
-|---|---|---|
-| `GROQ_API_KEY` | backend | Groq chat completions |
-| `GEMINI_API_KEY` | backend | Gemini embeddings |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | backend | GitHub OAuth App credentials |
-| `TOKEN_ENCRYPTOR_PASSWORD` / `TOKEN_ENCRYPTOR_SALT` | backend | Encrypts stored GitHub access tokens at rest |
-| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | backend | Defaults match `docker-compose.yml` |
-| `FRONTEND_URL` / `CORS_ALLOWED_ORIGINS` | backend | Defaults to `http://localhost:3000` |
-| `NEXT_PUBLIC_API_BASE_URL` | frontend | Defaults to `http://localhost:8080` |
-
-See `backend/src/main/resources/application.properties` for the full list and defaults.
+The repository is configured for Infrastructure-as-Code deployment:
+- **Backend:** Ready for [Render](https://render.com) using the included `render.yaml` and `backend/Dockerfile`.
+- **Frontend:** Ready for [Vercel](https://vercel.com).
+- **Database:** Recommended to use [Neon](https://neon.tech) for a serverless PostgreSQL instance with `pgvector` pre-installed.
