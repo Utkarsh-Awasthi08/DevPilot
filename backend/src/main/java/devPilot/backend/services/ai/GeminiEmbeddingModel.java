@@ -89,40 +89,49 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
 
     @Override
     public EmbeddingResponse call(EmbeddingRequest request) {
-        int estimatedTokens = request.getInstructions().stream()
-                .mapToInt(tokenCountEstimator::estimate)
-                .sum();
-        rateLimiter.acquire(estimatedTokens);
+        List<String> allInstructions = request.getInstructions();
+        List<Embedding> allEmbeddings = new ArrayList<>();
+        int batchSize = 20;
 
-        Map<String, Object> body = Map.of(
-                "input", request.getInstructions(),
-                "model", this.model,
-                "dimensions", this.dimensions
-        );
+        for (int startIndex = 0; startIndex < allInstructions.size(); startIndex += batchSize) {
+            int endIndex = Math.min(startIndex + batchSize, allInstructions.size());
+            List<String> batchInstructions = allInstructions.subList(startIndex, endIndex);
 
-        Map response = restClient.post()
-                .header("Authorization", "Bearer " + apiKey)
-                .body(body)
-                .retrieve()
-                .body(Map.class);
+            int rawTokens = batchInstructions.stream()
+                    .mapToInt(tokenCountEstimator::estimate)
+                    .sum();
+            int estimatedTokens = (int) Math.ceil(rawTokens * 1.25);
+            rateLimiter.acquire(estimatedTokens);
 
-        if (response == null || !(response.get("data") instanceof List<?> rawData)) {
-            throw new ExternalServiceException("Gemini", 0,
-                    "The AI embedding service returned an unexpected response. Please try again.");
-        }
-        List<Map<String, Object>> data = (List<Map<String, Object>>) rawData;
-        List<Embedding> embeddings = new ArrayList<>();
-        
-        for (int i = 0; i < data.size(); i++) {
-            Map<String, Object> d = data.get(i);
-            List<Double> vector = (List<Double>) d.get("embedding");
-            float[] floatVector = new float[vector.size()];
-            for (int j = 0; j < vector.size(); j++) {
-                floatVector[j] = vector.get(j).floatValue();
+            Map<String, Object> body = Map.of(
+                    "input", batchInstructions,
+                    "model", this.model,
+                    "dimensions", this.dimensions
+            );
+
+            Map response = restClient.post()
+                    .header("Authorization", "Bearer " + apiKey)
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
+
+            if (response == null || !(response.get("data") instanceof List<?> rawData)) {
+                throw new ExternalServiceException("Gemini", 0,
+                        "The AI embedding service returned an unexpected response. Please try again.");
             }
-            embeddings.add(new Embedding(floatVector, i));
+            List<Map<String, Object>> data = (List<Map<String, Object>>) rawData;
+
+            for (int i = 0; i < data.size(); i++) {
+                Map<String, Object> d = data.get(i);
+                List<Double> vector = (List<Double>) d.get("embedding");
+                float[] floatVector = new float[vector.size()];
+                for (int j = 0; j < vector.size(); j++) {
+                    floatVector[j] = vector.get(j).floatValue();
+                }
+                allEmbeddings.add(new Embedding(floatVector, startIndex + i));
+            }
         }
 
-        return new EmbeddingResponse(embeddings);
+        return new EmbeddingResponse(allEmbeddings);
     }
 }

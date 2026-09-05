@@ -31,4 +31,11 @@ public interface RepositoryRepository extends JpaRepository<Repository, UUID> {
             + "r.updatedAt = :now "
             + "WHERE r.id = :id AND r.userId = :userId AND r.indexStatus <> devPilot.backend.entity.IndexStatus.INDEXING")
     int tryStartIndexing(@Param("id") UUID id, @Param("userId") UUID userId, @Param("now") Instant now);
+
+    @Modifying
+    @Query("UPDATE Repository r SET r.indexStatus = :newStatus, r.errorMessage = :errorMessage "
+            + "WHERE r.indexStatus = :oldStatus")
+    int updateStatusByStatus(@Param("oldStatus") devPilot.backend.entity.IndexStatus oldStatus,
+                             @Param("newStatus") devPilot.backend.entity.IndexStatus newStatus,
+                             @Param("errorMessage") String errorMessage);
 }

@@ -13,6 +13,9 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.web.client.HttpClientErrorException;
 
@@ -29,6 +32,7 @@ import devPilot.backend.services.UserService;
 import devPilot.backend.services.ai.RagSettings;
 import devPilot.backend.services.github.GitHubRateLimiter;
 import devPilot.backend.services.github.GithubApiClient;
+import devPilot.backend.services.ratelimit.TokenBucketRateLimiter;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,7 +41,6 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 @Slf4j
 public class IndexingService {
-    private static final int VECTOR_BATCH_SIZE = 100;
     private static final int PROGRESS_EVERY_N_FILES = 5;
 
     private final RepositoryRepository repositoryRepository;
@@ -48,6 +51,9 @@ public class IndexingService {
     private final CodeChunker codeChunker;
     private final GitHubRateLimiter rateLimiter;
     private final VectorStore vectorStore;
+    private final UserIndexingCoordinator userIndexingCoordinator;
+    private final TokenBucketRateLimiter geminiRateLimiter;
+    private final ApplicationContext applicationContext;
 
     /** One entry from the GitHub tree API: enough to detect whether a file's content changed. */
     private record GitEntry(String path, String sha, long size) {
@@ -56,8 +62,27 @@ public class IndexingService {
     @Value("${app.indexing.max-file-bytes:102400}")
     private long maxFileBytes;
 
+    @Value("${app.indexing.vector-batch-size:20}")
+    private int vectorBatchSize;
+
+    @Value("${app.indexing.batch-delay-ms:200}")
+    private long batchDelayMs;
+
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public void resetOrphanedJobs() {
+        int reset = repositoryRepository.updateStatusByStatus(IndexStatus.INDEXING, IndexStatus.FAILED, "Indexing interrupted by server restart. Please retry.");
+        if (reset > 0) {
+            log.info("Reset {} orphaned repositories from INDEXING to FAILED status", reset);
+        }
+    }
+
     @Transactional
     public Repository startIndexing(UUID repoId, UUID userId) {
+        if (userIndexingCoordinator.isRepoQueuedOrActive(userId, repoId)) {
+            throw new BadRequestException("Repository is already being indexed or queued");
+        }
+
         // Verify ownership/existence first (also gives a clean 404 for a bad id).
         repositoryRepository.findByIdAndUserId(repoId, userId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
@@ -70,17 +95,33 @@ public class IndexingService {
             throw new BadRequestException("Repository is already being indexed");
         }
 
-        return repositoryRepository.findByIdAndUserId(repoId, userId)
+        Repository repo = repositoryRepository.findByIdAndUserId(repoId, userId)
                 .orElseThrow(() -> new NotFoundException("Repository not found"));
+
+        if (!userIndexingCoordinator.canStartImmediately(userId, repoId)) {
+            repo.setErrorMessage("Queued: waiting for active repository indexing to finish");
+            repositoryRepository.save(repo);
+            userIndexingCoordinator.enqueue(userId, repoId);
+        }
+
+        return repo;
     }
 
     @Async("indexingExecutor")
     public void indexAsync(UUID repoId, UUID userId) {
+        // Only run if this repo is actually the active one (avoids parallel execution if queued)
+        if (!repoId.equals(userIndexingCoordinator.getActiveJob(userId))) {
+            return;
+        }
         try {
             doIndex(repoId, userId);
         } catch (Exception ex) {
             log.error("Indexing failed for repo {}", repoId, ex);
             markFailed(repoId, friendlyMessage(ex));
+        } finally {
+            userIndexingCoordinator.pollNext(userId).ifPresent(nextRepoId -> {
+                applicationContext.getBean(IndexingService.class).indexAsync(nextRepoId, userId);
+            });
         }
     }
 
@@ -178,7 +219,7 @@ public class IndexingService {
                         .blobSha(entry.sha())
                         .chunkCount(chunks.size())
                         .build());
-                if (batch.size() >= VECTOR_BATCH_SIZE) {
+                if (batch.size() >= vectorBatchSize) {
                     flushBatch(batch, pendingRecords);
                 }
             } catch (Exception ex) {
@@ -213,16 +254,21 @@ public class IndexingService {
     }
 
     private void saveBatchWithRetry(List<Document> batch) {
-        int maxRetries = 3;
-        for (int i = 0; i < maxRetries; i++) {
+        int[] backoffSeconds = {15, 30, 45, 60, 75};
+        for (int i = 0; i < backoffSeconds.length; i++) {
             try {
                 vectorStore.add(batch);
+                if (batchDelayMs > 0) {
+                    try { Thread.sleep(batchDelayMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                }
                 return;
             } catch (Exception e) {
                 if (isRateLimited(e)) {
-                    log.warn("Rate limit hit (429). Retrying after 20 seconds...");
+                    int delay = backoffSeconds[i] + (int)(Math.random() * 5); // Add jitter
+                    log.warn("Rate limit hit (429). Draining bucket and retrying in {} seconds (attempt {} of {})...", delay, i + 1, backoffSeconds.length);
+                    geminiRateLimiter.drainAndPause(java.time.Duration.ofSeconds(delay));
                     try {
-                        Thread.sleep(20000);
+                        Thread.sleep(delay * 1000L);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         throw new IllegalStateException("Interrupted while waiting to retry vector batch save", ie);

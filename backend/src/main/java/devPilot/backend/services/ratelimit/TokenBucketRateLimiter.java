@@ -1,5 +1,6 @@
 package devPilot.backend.services.ratelimit;
 
+import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -33,18 +34,19 @@ public class TokenBucketRateLimiter {
     /** Blocks the calling thread until both a request slot and the token budget are available. */
     public void acquire(int estimatedTokens) {
         int need = Math.max(1, estimatedTokens);
+        int effectiveNeed = Math.min(need, maxTokensPerMinute);
         while (true) {
             long waitMillis;
             synchronized (lock) {
                 refill();
-                if (requestCredits >= 1 && tokenCredits >= need) {
+                if (requestCredits >= 1 && tokenCredits >= effectiveNeed) {
                     requestCredits -= 1;
-                    tokenCredits -= need;
+                    tokenCredits -= effectiveNeed;
                     return;
                 }
-                waitMillis = millisUntilAvailable(need);
+                waitMillis = millisUntilAvailable(effectiveNeed);
             }
-            log.debug("{} rate limit: waiting {}ms for capacity ({} tokens requested)", name, waitMillis, need);
+            log.debug("{} rate limit: waiting {}ms for capacity ({} tokens requested, effective {})", name, waitMillis, need, effectiveNeed);
             sleep(waitMillis);
         }
     }
@@ -89,5 +91,14 @@ public class TokenBucketRateLimiter {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while rate limiting", e);
         }
+    }
+
+    public void drainAndPause(Duration pause) {
+        synchronized (lock) {
+            requestCredits = 0;
+            tokenCredits = 0;
+            lastRefillNanos = System.nanoTime() + pause.toNanos();
+        }
+        log.info("{} rate limit: drained bucket and paused for {}ms", name, pause.toMillis());
     }
 }
