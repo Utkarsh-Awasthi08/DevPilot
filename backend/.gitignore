@@ -33,4 +33,5 @@ build/
 .vscode/
 
 ### Secrets ###
-application.properties
+# application.properties (removed to allow deployment, secrets stripped)
+application-dev.properties
