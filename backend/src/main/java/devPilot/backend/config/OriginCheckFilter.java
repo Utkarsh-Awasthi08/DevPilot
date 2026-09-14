@@ -14,8 +14,10 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 
 @Component
+@Slf4j
 public class OriginCheckFilter extends OncePerRequestFilter {
 
     private final List<String> allowedOrigins;
@@ -42,16 +44,18 @@ public class OriginCheckFilter extends OncePerRequestFilter {
             // In a strict browser-only CSRF defense, we'd block this.
             // But we'll at least verify that if an Origin/Referer IS sent, it's trusted.
             String source = origin != null ? origin : referer;
-            
+
             if (source != null) {
-                boolean isTrusted = false;
-                for (String allowedOrigin : allowedOrigins) {
-                    if (source.startsWith(allowedOrigin)) {
-                        isTrusted = true;
-                        break;
-                    }
-                }
+                // Exact match on the scheme+host+port only — startsWith() previously let
+                // "https://trusted.app.evil.com" pass for an allow-list entry of
+                // "https://trusted.app", and was also fragile to a trailing slash on either
+                // side (a Referer always has a trailing "/", an Origin never does).
+                String normalizedSource = stripTrailingSlash(source);
+                boolean isTrusted = allowedOrigins.stream()
+                        .anyMatch(allowedOrigin -> stripTrailingSlash(allowedOrigin).equals(normalizedSource));
                 if (!isTrusted) {
+                    log.warn("Rejected {} {} — origin/referer '{}' not in allowed list {}",
+                            method, request.getRequestURI(), source, allowedOrigins);
                     response.sendError(HttpStatus.FORBIDDEN.value(), "Untrusted origin");
                     return;
                 }
@@ -59,5 +63,9 @@ public class OriginCheckFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private static String stripTrailingSlash(String value) {
+        return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 }
