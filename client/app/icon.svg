@@ -1,0 +1,29 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fb7185" />
+      <stop offset="1" stop-color="#9f1239" />
+    </linearGradient>
+  </defs>
+
+  <rect width="32" height="32" rx="7.5" fill="url(#bg)" />
+
+  <!-- chat bubble tail -->
+  <path d="M9.5 20 L7 25.5 L13.5 20.5 Z" fill="white" />
+
+  <!-- chat bubble body -->
+  <rect x="6" y="7" width="20" height="14" rx="5" fill="white" />
+
+  <!-- ">" prompt chevron -->
+  <path
+    d="M11.5 9.8 L16.5 14 L11.5 18.2"
+    stroke="#e11d48"
+    stroke-width="2.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+
+  <!-- "_" prompt dash -->
+  <rect x="19" y="17.3" width="5.5" height="2.3" rx="1.15" fill="#e11d48" />
+</svg>
