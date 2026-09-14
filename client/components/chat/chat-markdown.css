@@ -64,6 +64,8 @@
 
 .chat-markdown [data-streamdown="code-block"] {
   margin: 0.75rem 0;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .chat-markdown [data-streamdown="link"] {

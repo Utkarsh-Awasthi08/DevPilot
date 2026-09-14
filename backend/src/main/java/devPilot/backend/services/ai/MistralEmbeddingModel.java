@@ -26,31 +26,32 @@ import devPilot.backend.services.ratelimit.TokenBucketRateLimiter;
 
 @Component
 @Primary
-public class GeminiEmbeddingModel implements EmbeddingModel {
+public class MistralEmbeddingModel implements EmbeddingModel {
 
     private final RestClient restClient;
     private final String apiKey;
     private final String model;
-    private final int dimensions;
+    private final int batchSize;
     private final TokenCountEstimator tokenCountEstimator;
     private final TokenBucketRateLimiter rateLimiter;
 
-    public GeminiEmbeddingModel(
-            @Value("${spring.ai.google.genai.api-key}") String apiKey,
-            @Value("${spring.ai.google.genai.embedding.options.model}") String model,
-            @Value("${spring.ai.vectorstore.pgvector.dimensions}") int dimensions,
+    public MistralEmbeddingModel(
+            @Value("${app.ai.mistral.api-key}") String apiKey,
+            @Value("${app.ai.mistral.base-url}") String baseUrl,
+            @Value("${app.ai.mistral.embedding.model}") String model,
+            @Value("${app.indexing.vector-batch-size:50}") int batchSize,
             TokenCountEstimator tokenCountEstimator,
-            @Qualifier("geminiRateLimiter") TokenBucketRateLimiter rateLimiter) {
+            @Qualifier("embeddingRateLimiter") TokenBucketRateLimiter rateLimiter) {
         this.apiKey = apiKey;
         this.model = model;
-        this.dimensions = dimensions;
+        this.batchSize = batchSize;
         this.tokenCountEstimator = tokenCountEstimator;
         this.rateLimiter = rateLimiter;
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
         requestFactory.setReadTimeout(Duration.ofSeconds(30));
         this.restClient = RestClient.builder()
-                .baseUrl("https://generativelanguage.googleapis.com/v1beta/openai/v1/embeddings")
+                .baseUrl(baseUrl + "/embeddings")
                 .requestFactory(requestFactory)
                 .defaultStatusHandler(HttpStatusCode::isError, (request, response) -> {
                     throw translateError(response.getStatusCode().value());
@@ -60,13 +61,13 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
 
     private static ExternalServiceException translateError(int status) {
         String message = switch (status) {
-            case 401, 403 -> "The AI embedding service rejected the request. Please check the service configuration.";
+            case 401, 403 -> "The AI embedding service rejected the request. Please check your Mistral API key.";
             case 429 -> "The AI embedding service is rate-limited right now.";
             default -> status >= 500
                     ? "The AI embedding service is temporarily unavailable. Please try again later."
                     : "The AI embedding service request failed (status " + status + ").";
         };
-        return new ExternalServiceException("Gemini", status, message);
+        return new ExternalServiceException("Mistral", status, message);
     }
 
     @Override
@@ -91,7 +92,6 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
     public EmbeddingResponse call(EmbeddingRequest request) {
         List<String> allInstructions = request.getInstructions();
         List<Embedding> allEmbeddings = new ArrayList<>();
-        int batchSize = 20;
 
         for (int startIndex = 0; startIndex < allInstructions.size(); startIndex += batchSize) {
             int endIndex = Math.min(startIndex + batchSize, allInstructions.size());
@@ -105,8 +105,7 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
 
             Map<String, Object> body = Map.of(
                     "input", batchInstructions,
-                    "model", this.model,
-                    "dimensions", this.dimensions
+                    "model", this.model
             );
 
             Map response = restClient.post()
@@ -116,7 +115,7 @@ public class GeminiEmbeddingModel implements EmbeddingModel {
                     .body(Map.class);
 
             if (response == null || !(response.get("data") instanceof List<?> rawData)) {
-                throw new ExternalServiceException("Gemini", 0,
+                throw new ExternalServiceException("Mistral", 0,
                         "The AI embedding service returned an unexpected response. Please try again.");
             }
             List<Map<String, Object>> data = (List<Map<String, Object>>) rawData;

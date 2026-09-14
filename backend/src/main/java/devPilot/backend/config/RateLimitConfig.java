@@ -17,16 +17,14 @@ public class RateLimitConfig {
     }
 
     /**
-     * Paces outbound Gemini embedding calls so the app stays under the API key's shared
-     * RPM/TPM quota proactively, instead of bursting and reacting to 429s afterward. Defaults
-     * match Gemini's published free-tier limits for gemini-embedding-001 — adjust if your plan
-     * differs.
+     * Paces outbound embedding calls so the app stays under the API key's shared
+     * RPM/TPM quota proactively.
      */
-    @Bean(name = "geminiRateLimiter")
-    TokenBucketRateLimiter geminiRateLimiter(
-            @Value("${app.rate-limit.gemini.rpm:100}") int rpm,
-            @Value("${app.rate-limit.gemini.tpm:30000}") int tpm) {
-        return new TokenBucketRateLimiter("Gemini embeddings", rpm, tpm);
+    @Bean(name = "embeddingRateLimiter")
+    TokenBucketRateLimiter embeddingRateLimiter(
+            @Value("${app.rate-limit.embedding.rpm:60}") int rpm,
+            @Value("${app.rate-limit.embedding.tpm:20000000}") int tpm) {
+        return new TokenBucketRateLimiter("Embeddings", rpm, tpm);
     }
 
     /**

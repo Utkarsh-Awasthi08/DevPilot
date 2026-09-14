@@ -26,6 +26,10 @@ export function ChatMarkdown({
       plugins={streamdownPlugins}
       shikiTheme={["github-light", "github-dark"]}
       isAnimating={isStreaming}
+      // Only wraps content in the fade-in animation while actively streaming — the plugin
+      // treats a fresh mount's full text as "new," so enabling it for already-complete
+      // historical messages would replay the whole fade-in every time a session is reopened.
+      animated={isStreaming}
     >
       {content}
     </Streamdown>

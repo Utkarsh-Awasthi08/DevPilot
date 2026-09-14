@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 export function ChatMessages({
   repo,
   messages,
+  streaming,
   streamText,
   isLoading,
   isError,
@@ -31,6 +32,7 @@ export function ChatMessages({
 }: {
   repo: Repository;
   messages: ChatMessage[];
+  streaming?: boolean;
   streamText?: string;
   isLoading?: boolean;
   isError?: boolean;
@@ -128,6 +130,29 @@ export function ChatMessages({
               </Message>
             );
           })}
+
+          {streaming && !streamText && (
+            <Message align="start">
+              <MessageAvatar>
+                <Avatar className="size-8">
+                  <AvatarFallback className="bg-muted">
+                    <Bot className="size-4" />
+                  </AvatarFallback>
+                </Avatar>
+              </MessageAvatar>
+              <MessageContent>
+                <Bubble variant="muted" align="start">
+                  <BubbleContent className="px-4 py-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="size-1.5 animate-bounce rounded-full bg-foreground/50 [animation-delay:-0.3s]" />
+                      <span className="size-1.5 animate-bounce rounded-full bg-foreground/50 [animation-delay:-0.15s]" />
+                      <span className="size-1.5 animate-bounce rounded-full bg-foreground/50" />
+                    </div>
+                  </BubbleContent>
+                </Bubble>
+              </MessageContent>
+            </Message>
+          )}
 
           {streamText && (
             <Message align="start">

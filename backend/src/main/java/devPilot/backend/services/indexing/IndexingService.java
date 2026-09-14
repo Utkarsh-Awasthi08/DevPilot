@@ -52,7 +52,7 @@ public class IndexingService {
     private final GitHubRateLimiter rateLimiter;
     private final VectorStore vectorStore;
     private final UserIndexingCoordinator userIndexingCoordinator;
-    private final TokenBucketRateLimiter geminiRateLimiter;
+    private final TokenBucketRateLimiter embeddingRateLimiter;
     private final ApplicationContext applicationContext;
 
     /** One entry from the GitHub tree API: enough to detect whether a file's content changed. */
@@ -266,7 +266,7 @@ public class IndexingService {
                 if (isRateLimited(e)) {
                     int delay = backoffSeconds[i] + (int)(Math.random() * 5); // Add jitter
                     log.warn("Rate limit hit (429). Draining bucket and retrying in {} seconds (attempt {} of {})...", delay, i + 1, backoffSeconds.length);
-                    geminiRateLimiter.drainAndPause(java.time.Duration.ofSeconds(delay));
+                    embeddingRateLimiter.drainAndPause(java.time.Duration.ofSeconds(delay));
                     try {
                         Thread.sleep(delay * 1000L);
                     } catch (InterruptedException ie) {

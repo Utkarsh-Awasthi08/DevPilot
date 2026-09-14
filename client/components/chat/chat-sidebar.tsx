@@ -31,7 +31,7 @@ export function ChatSidebar({
   const reindex = useStartIndexing();
 
   return (
-    <aside className="flex w-full flex-col border-b md:w-72 md:border-r md:border-b-0">
+    <aside className="flex w-full shrink-0 flex-col border-b md:w-72 md:border-r md:border-b-0">
       <div className="space-y-3 p-4">
         <div className="space-y-1">
           <p className="truncate text-sm font-medium">{repo.fullName}</p>

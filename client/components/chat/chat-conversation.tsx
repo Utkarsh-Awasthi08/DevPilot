@@ -34,6 +34,7 @@ export function ChatConversation({
       <ChatMessages
         repo={repo}
         messages={messages}
+        streaming={streaming}
         streamText={streamText}
         isLoading={isLoading}
         isError={isError}

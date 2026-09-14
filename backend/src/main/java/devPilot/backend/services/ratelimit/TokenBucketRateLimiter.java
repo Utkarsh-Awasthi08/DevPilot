@@ -17,6 +17,7 @@ public class TokenBucketRateLimiter {
     private final String name;
     private final int maxRequestsPerMinute;
     private final int maxTokensPerMinute;
+    private final double maxRequestBurst = 1.0; // Strictly forbid request bursts
     private final Object lock = new Object();
     private double requestCredits;
     private double tokenCredits;
@@ -26,7 +27,7 @@ public class TokenBucketRateLimiter {
         this.name = name;
         this.maxRequestsPerMinute = Math.max(1, maxRequestsPerMinute);
         this.maxTokensPerMinute = Math.max(1, maxTokensPerMinute);
-        this.requestCredits = this.maxRequestsPerMinute;
+        this.requestCredits = this.maxRequestBurst;
         this.tokenCredits = this.maxTokensPerMinute;
         this.lastRefillNanos = System.nanoTime();
     }
@@ -79,7 +80,7 @@ public class TokenBucketRateLimiter {
         if (elapsedMinutes <= 0) {
             return;
         }
-        requestCredits = Math.min(maxRequestsPerMinute, requestCredits + elapsedMinutes * maxRequestsPerMinute);
+        requestCredits = Math.min(maxRequestBurst, requestCredits + elapsedMinutes * maxRequestsPerMinute);
         tokenCredits = Math.min(maxTokensPerMinute, tokenCredits + elapsedMinutes * maxTokensPerMinute);
         lastRefillNanos = now;
     }

@@ -108,7 +108,7 @@ export function ChatView({ repoId }: { repoId: string }) {
         </Button>
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
         <ChatSidebar
           repo={{
             ...repo,
