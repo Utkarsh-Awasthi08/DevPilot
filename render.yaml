@@ -27,5 +27,15 @@ services:
         sync: false
       - key: TOKEN_ENCRYPTOR_PASSWORD
         generateValue: true
+      # Must be a hex-encoded string (Encryptors.delux hex-decodes it for AES key derivation) —
+      # Render's generateValue produces a generic random secret, not hex-constrained, so it was
+      # crashing tokenEncryptor() at startup. Set manually below.
       - key: TOKEN_ENCRYPTOR_SALT
-        generateValue: true
+        sync: false
+      # Frontend and backend are on different domains in production, so the session cookie must
+      # be SameSite=None; Secure for cross-site fetch() calls to carry it — fixed values, not
+      # secrets, so no manual dashboard entry needed.
+      - key: SESSION_COOKIE_SAME_SITE
+        value: none
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
