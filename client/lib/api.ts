@@ -70,7 +70,10 @@ export class ApiError extends Error {
 }
 
 export function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
+  if (typeof window !== "undefined") {
+    return ""; // In browser, use relative path so Next.js rewrites handle it
+  }
+  return process.env.NEXT_PUBLIC_API_BASE_URL || process.env.BACKEND_URL || "http://localhost:8080";
 }
 
 export function getGithubLoginUrl() {

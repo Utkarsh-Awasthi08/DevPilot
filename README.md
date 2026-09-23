@@ -89,4 +89,4 @@ Admitting gaps is just as important as highlighting features:
 The repository is configured for Infrastructure-as-Code deployment:
 - **Backend:** Ready for [Render](https://render.com) using the included `render.yaml` and `backend/Dockerfile`.
 - **Frontend:** Ready for [Vercel](https://vercel.com).
-- **Database:** Recommended to use [Neon](https://neon.tech) for a serverless PostgreSQL instance with `pgvector` pre-installed.
+- **Database:** Recommended to use [Supabase](https://supabase.com) for a hosted PostgreSQL instance with `pgvector` pre-installed.

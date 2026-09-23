@@ -15,7 +15,7 @@ Deploying also makes the secrets-rotation item in `ISSUES.md` (#1/#2) non-option
 **Suggested free/near-free stack:**
 - **Frontend:** Vercel — frictionless for Next.js, effectively the default choice.
 - **Backend:** Render's free tier supports web services + Postgres with no credit card and no Dockerfile requirement, making it the easiest zero-cost option. Railway is faster to deploy but its free credit only covers a few hours/month. Fly.io no longer has a free tier for new users.
-- **Postgres + pgvector:** Both Neon and Supabase support pgvector free. **Neon is the better fit** — it scales to zero after ~5 min idle and resumes in ~1 second. Supabase free projects now pause entirely after 7 days of inactivity and need a manual dashboard unpause — a real risk if a recruiter opens your demo link a week after you last touched it.
+- **Postgres + pgvector:** Using Supabase — free tier supports pgvector. Note: Supabase free projects pause entirely after 7 days of inactivity and need a manual dashboard unpause, which is worth keeping in mind if a recruiter might open the demo link after a long gap (a scheduled keep-alive ping, or just remembering to unpause before sharing the link, avoids this).
 
 ---
 
@@ -86,7 +86,7 @@ Small/trivial effort, and each one reads as "found and fixed a real issue" in an
 
 ## Suggested starting order
 
-1. Deploy it (Vercel + Render + Neon), rotating secrets to real env vars in the process.
+1. Deploy it (Vercel + Render + Supabase), rotating secrets to real env vars in the process.
 2. Write a real README with the two architecture diagrams and a Technical Decisions section.
 3. Build the RAGAS eval harness and publish the numbers.
 4. Add basic CI + Actuator.
